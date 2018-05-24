@@ -8,16 +8,17 @@ namespace Sentry
 {
     // TODO: Async
     // Func to create event only instead of expect u to access the client
-    // consider Serilog's approach
+
+    // propose Serilog's approach
 
     public static class SentrySdk
     {
-        private static readonly AsyncLocal<ImmutableStack<Scope>> AsyncLocalScope = new AsyncLocal<ImmutableStack<Scope>>();
+        private static readonly AsyncLocal<Scope> AsyncLocalScope = new AsyncLocal<Scope>();
         private static ISentryClient _client;
 
-        internal static ImmutableStack<Scope> ScopeStack
+        internal static Scope CurrentScope
         {
-            get => AsyncLocalScope.Value ?? (AsyncLocalScope.Value = ImmutableStack.Create(new Scope()));
+            get => AsyncLocalScope.Value ?? (AsyncLocalScope.Value = new Scope());
             set => AsyncLocalScope.Value = value;
         }
 
@@ -25,8 +26,7 @@ namespace Sentry
         {
             if (_client != null)
             {
-                var scope = ScopeStack.Peek();
-                configureScope?.Invoke(scope);
+                configureScope?.Invoke(CurrentScope);
             }
         }
 
@@ -47,15 +47,10 @@ namespace Sentry
                 .SafeDispose();
         }
 
-        // Microsoft.Extensions.Logging calls its equivalent method: BeginScope()
-        public static IDisposable PushScope()
+        public static void PushScope()
         {
-            var currentScope = ScopeStack;
-            var scope = currentScope.Peek().Clone();
-            var stack = new ScopeSnapshot(currentScope);
-            ScopeStack = currentScope.Push(stack);
-
-            return stack;
+            var currentScope = CurrentScope;
+            CurrentScope = currentScope.Clone();
         }
 
         public static string CaptureEvent(SentryEvent evt)
@@ -77,11 +72,11 @@ namespace Sentry
             var client = _client;
             if (client == null)
             {
-                // some Response object could always be returned while signaling SDK disabled instead of relying on magic strings
+                // some Response object could always be returned while internally signaling SDK disabled instead of relying on magic strings
                 return DisabledSdkResponse;
             }
 
-            return handler(client, ScopeStack);
+            return handler(client, CurrentScope);
         }
 
         public static Task<string> WithClientAndScopeAsync(Func<ISentryClient, Scope, Task<string>> handler)
@@ -89,17 +84,17 @@ namespace Sentry
             var client = _client;
             if (client == null)
             {
-                // some Response object could always be returned while signaling SDK disabled instead of relying on magic strings
+                // some Response object could always be returned while internally signaling SDK disabled instead of relying on magic strings
                 return Task.FromResult(DisabledSdkResponse);
             }
 
-            return handler(client, ScopeStack);
+            return handler(client, CurrentScope);
         }
 
         #region Proposed API
 
         public static string CaptureEvent(Func<SentryEvent> eventFactory)
-            => _client?.CaptureEvent(eventFactory(), ScopeStack);
+            => _client?.CaptureEvent(eventFactory(), CurrentScope);
 
         public static async Task<string> CaptureEventAsync(Func<Task<SentryEvent>> eventFactory)
         {
@@ -111,18 +106,10 @@ namespace Sentry
             }
 
             // SDK enabled, invoke the factory and the client, asynchronously
-            return await client.CaptureEventAsync(await eventFactory(), ScopeStack.Peek());
+            return await client.CaptureEventAsync(await eventFactory(), CurrentScope);
         }
 
         #endregion
-    }
-
-    internal sealed class ScopeSnapshot : IDisposable
-    {
-        private readonly ImmutableStack<Scope> _snapshot;
-        public ScopeSnapshot(ImmutableStack<Scope> snapshot) => _snapshot = snapshot;
-
-        public void Dispose() => SentrySdk.ScopeStack = _snapshot;
     }
 
     // Some SDK options

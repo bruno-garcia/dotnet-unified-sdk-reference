@@ -32,14 +32,8 @@ namespace Company.App
 
             try
             {
-                using (SentrySdk.PushScope())
-                {
-                    SentrySdk.ConfigureScope(scope => scope.AddTag("Only visible within App!"));
 
-                    await App();
-
-                    SentrySdk.ConfigureScope(scope => scope.AddTag("Will never be seen at all."));
-                }
+                await App();
             }
             catch (Exception exception)
             {
@@ -122,14 +116,14 @@ namespace Company.App
             var task = Task.Run(() =>
             {
                 // If no scope is pushed here, it'd be mutating the outer scope
-                using (SentrySdk.PushScope()) // New scope, clone of the parent
-                {
-                    // Should it be ConfigureNewScope instead and bundle operations?
-                    SentrySdk.ConfigureScope(scope => scope.AddTag("First TPL task adding to scope"));
+                SentrySdk.PushScope(); // New scope, clone of the parent
 
-                    // Simply send event
-                    SentrySdk.CaptureEvent(new SentryEvent("First Event from TPL"));
-                }
+                // Should it be ConfigureNewScope instead and bundle operations?
+                SentrySdk.ConfigureScope(scope => scope.AddTag("First TPL task adding to scope"));
+
+                // Simply send event
+                SentrySdk.CaptureEvent(new SentryEvent("First Event from TPL"));
+
             });
 
             await task;
