@@ -32,6 +32,8 @@ namespace Company.App
 
             try
             {
+                SentrySdk.ConfigureScope(scope => scope.AddTag("Global scope thingy."));
+
                 using (SentrySdk.PushScope())
                 {
                     SentrySdk.ConfigureScope(scope => scope.AddTag("Only visible within App!"));
@@ -108,34 +110,45 @@ namespace Company.App
 
         private static async Task App()
         {
-            SentrySdk.ConfigureScope(scope => scope.AddTag("Initial scope data."));
+            SentrySdk.ConfigureScope(scope => scope.AddTag("Starting app.."));
 
             SentrySdk.WithClientAndScope((client, scope) =>
             {
                 // Create heavy event stuff
-                var evt = new SentryEvent("Entrypoint event.");
-                scope.AddTag("Some scope change done in the callback");
+                var evt = new SentryEvent("First App event.");
+                scope.AddTag("Scope data from within callback.");
                 return client.CaptureEvent(evt, scope);
             });
 
             // TODO: how does it behave with .ConfigureAwait(false);
             var task = Task.Run(() =>
             {
-                // If no scope is pushed here, it'd be mutating the outer scope
+                SentrySdk.ConfigureScope(scope => scope.AddTag(@"Data set inside Task but outside any scope guard. 
+Should survive the Task itself"));
+
                 using (SentrySdk.PushScope()) // New scope, clone of the parent
                 {
-                    // Should it be ConfigureNewScope instead and bundle operations?
-                    SentrySdk.ConfigureScope(scope => scope.AddTag("First TPL task adding to scope"));
+                    SentrySdk.ConfigureScope(scope => scope.AddTag("A"));
+                    SentrySdk.CaptureEvent(new SentryEvent("A"));
 
-                    // Simply send event
-                    SentrySdk.CaptureEvent(new SentryEvent("First Event from TPL"));
+                    using (SentrySdk.PushScope()) // New scope, clone of the parent
+                    {
+                        SentrySdk.ConfigureScope(scope => scope.AddTag("B1"));
+                        SentrySdk.CaptureEvent(new SentryEvent("B1"));
+                    }
+
+                    using (SentrySdk.PushScope()) // New scope, clone of the parent
+                    {
+                        SentrySdk.ConfigureScope(scope => scope.AddTag("B2"));
+                        SentrySdk.CaptureEvent(new SentryEvent("B2"));
+                    }
                 }
+
             });
 
             await task;
 
-            // here we shouldn't see side-effect from the TPL task
-            SentrySdk.CaptureEvent(new SentryEvent("Final event from main thread"));
+            SentrySdk.CaptureEvent(new SentryEvent("Event after awaiting TPL task"));
 
             throw new Exception("Error in the app");
         }

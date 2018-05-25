@@ -21,6 +21,8 @@ namespace Sentry
             set => AsyncLocalScope.Value = value;
         }
 
+        internal static Scope Scope => ScopeStack.Peek();
+
         internal static void ConfigureScope(Action<Scope> configureScope)
         {
             if (_client != null)
@@ -50,12 +52,12 @@ namespace Sentry
         // Microsoft.Extensions.Logging calls its equivalent method: BeginScope()
         public static IDisposable PushScope()
         {
-            var currentScope = ScopeStack;
-            var scope = currentScope.Peek().Clone();
-            var stack = new ScopeSnapshot(currentScope);
-            ScopeStack = currentScope.Push(stack);
+            var currentScopeStack = ScopeStack;
+            var clonedScope = currentScopeStack.Peek().Clone();
+            var scopeSnapshot = new ScopeSnapshot(currentScopeStack);
+            ScopeStack = currentScopeStack.Push(clonedScope);
 
-            return stack;
+            return scopeSnapshot;
         }
 
         public static string CaptureEvent(SentryEvent evt)
@@ -81,7 +83,7 @@ namespace Sentry
                 return DisabledSdkResponse;
             }
 
-            return handler(client, ScopeStack);
+            return handler(client, ScopeStack.Peek());
         }
 
         public static Task<string> WithClientAndScopeAsync(Func<ISentryClient, Scope, Task<string>> handler)
@@ -93,13 +95,13 @@ namespace Sentry
                 return Task.FromResult(DisabledSdkResponse);
             }
 
-            return handler(client, ScopeStack);
+            return handler(client, Scope);
         }
 
         #region Proposed API
 
         public static string CaptureEvent(Func<SentryEvent> eventFactory)
-            => _client?.CaptureEvent(eventFactory(), ScopeStack);
+            => _client?.CaptureEvent(eventFactory(), Scope);
 
         public static async Task<string> CaptureEventAsync(Func<Task<SentryEvent>> eventFactory)
         {
@@ -111,7 +113,7 @@ namespace Sentry
             }
 
             // SDK enabled, invoke the factory and the client, asynchronously
-            return await client.CaptureEventAsync(await eventFactory(), ScopeStack.Peek());
+            return await client.CaptureEventAsync(await eventFactory(), Scope);
         }
 
         #endregion
@@ -143,14 +145,20 @@ namespace Sentry
         public HttpSentryClient(SentryOptions options) { }
         public Task<string> CaptureEventAsync(SentryEvent evt, Scope scope)
         {
-            Console.WriteLine("Event captured asynchrounsly: " + evt);
+            Console.WriteLine($@"Event captured asynchrounsly: {evt}
+    Scope: {scope}
+
+");
+
             return Task.FromResult("321");
         }
 
         public string CaptureEvent(SentryEvent evt, Scope scope)
         {
             Console.WriteLine($@"Event captured: {evt}
-    Scope: {scope}");
+    Scope: {scope}
+
+");
             return "123";
         }
 
